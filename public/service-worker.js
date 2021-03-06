@@ -40,23 +40,42 @@ const FILES_TO_CACHE = [
     );
   });
   
-  self.addEventListener('fetch', (event) => {
-    if (event.request.url.includes('api')) {
-      event.respondWith(
-        caches.match(event.request).then((cachedResponse) => {
-          if (cachedResponse) {
-            return cachedResponse;
-          }
+  self.addEventListener("fetch", function(event) {
+
+    console.log("fetch", event.request.url);
   
-          return caches.open(RUNTIME).then((cache) => {
-            return fetch(event.request).then((response) => {
-              return cache.put(event.request.url, response.clone()).then(() => {
-                return response;
-              });
-            });
-          });
-        })
-      );
+    const handleAPIDataRequest = async (event) => {
+      try {
+        const response = await fetch(event.request);
+        // If the response was good, clone it and store it in the cache.
+        if (response.status === 200) {
+          console.log(`Adding API request to cache now: ${event.request.url}`);
+  
+          const apiCache = await caches.open(RUNTIME);
+          await apiCache.put(event.request.url, response.clone());
+  
+          return response;
+        }
+      } catch(error) {
+        // Network request failed, try to get it from the cache.
+        console.log(`Network error occurred with API request. Now retrieving it from the cache: ${event.request.url}`)
+        return await caches.match(event.request);
+      }
     }
+    
+    const handleResourceRequest = async (event) => {
+      const matchedCache = await caches.match(event.request);
+      return matchedCache ||  await fetch(event.request);
+    }
+    
+    // cache successful requests to the API
+    if (event.request.url.includes("/api/")) {
+      event.respondWith(handleAPIDataRequest(event));
+    } else {
+      // if the request is not for the API, serve static assets using "offline-first" approach.
+      // see https://developers.google.com/web/fundamentals/instant-and-offline/offline-cookbook#cache-falling-back-to-network
+      event.respondWith(handleResourceRequest(event));
+    }
+  
   });
   
